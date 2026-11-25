@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin - Sourcing</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen">
+  <div id="lock-screen" class="min-h-screen flex items-center justify-center p-4">
+    <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-full max-w-sm space-y-4">
+      <h1 class="text-xl font-bold">Accès Admin</h1>
+      <input id="admin-pin" type="password" placeholder="Code d'accès" class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 text-sm" />
+      <button onclick="unlock()" class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-semibold text-sm">Déverrouiller</button>
+      <p id="pin-err" class="text-xs text-rose-400 text-center"></p>
+    </div>
+  </div>
+
+  <div id="admin-app" class="hidden max-w-3xl mx-auto p-4 sm:p-6">
+    <header class="flex items-center justify-between mb-6">
+      <h1 class="text-2xl font-bold">Gestion des demandes</h1>
+      <div class="flex gap-2">
+        <button onclick="loadAll()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs">Actualiser</button>
+        <a href="index.html" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs">Vue client</a>
+      </div>
+    </header>
+    <div id="admin-list" class="space-y-4"></div>
+  </div>
+
+  <script>
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const STATUTS = ["En recherche", "Devis prêt", "Validé", "En transit", "Terminé", "Annulé"];
+
+    function unlock() {
+      const pin = document.getElementById("admin-pin").value;
+      if (pin === ADMIN_CODE) {
+        document.getElementById("lock-screen").classList.add("hidden");
+        document.getElementById("admin-app").classList.remove("hidden");
+        loadAll();
+      } else {
+        document.getElementById("pin-err").textContent = "Code incorrect.";
+      }
+    }
+
+    async function loadAll() {
+      const container = document.getElementById("admin-list");
+      container.innerHTML = `<p class="text-sm text-zinc-400">Chargement des demandes...</p>`;
+
+      const { data, error } = await sb.from("demandes").select("*").order("id", { ascending: false });
+      if (error) {
+        container.innerHTML = `<p class="text-sm text-rose-400">Erreur : ${error.message}</p>`;
+        return;
+      }
+
+      if (!data.length) {
+        container.innerHTML = `<div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 text-sm text-zinc-400">Aucune demande pour l'instant.</div>`;
+        return;
+      }
+
+      container.innerHTML = data.map(d => `
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-3">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h2 class="font-semibold text-base">#${d.id} — ${d.produit_nom} <span class="text-xs text-zinc-400">(${d.taille})</span></h2>
+              <p class="text-xs text-zinc-400">Client : <strong class="text-zinc-200">${d.client_pseudo}</strong> (${d.client_contact || "pas de contact"})</p>
+              ${d.lien_officiel ? `<a href="${d.lien_officiel}" target="_blank" class="text-xs text-emerald-400 underline">Lien officiel</a>` : ""}
+            </div>
+            <span class="text-xs px-2.5 py-1 rounded-full bg-zinc-800 font-medium">${d.statut}</span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-zinc-400 mb-1">Prix client (€)</label>
+              <input id="prix-${d.id}" type="number" step="0.01" value="${d.prix_client ?? ""}" placeholder="ex: 50" class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label class="block text-xs text-zinc-400 mb-1">Statut</label>
+              <select id="statut-${d.id}" class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm">
+                ${STATUTS.map(s => `<option value="${s}" ${d.statut === s ? "selected" : ""}>${s}</option>`).join("")}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs text-zinc-400 mb-1">Note / Détails / QC</label>
+            <input id="note-${d.id}" type="text" value="${d.note_admin ?? ""}" placeholder="ex: Batch trouvé, livraison ~12 jours, photos QC ajoutées" class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          </div>
+
+          <div>
+            <label class="block text-xs text-zinc-400 mb-1">URLs des photos (séparées par une virgule)</label>
+            <input id="photos-${d.id}" type="text" value="${d.photos_qc ?? ""}" placeholder="https://..." class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3 py-2 text-sm" />
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+            <label class="text-xs px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 cursor-pointer">
+              + Upload photo vers photos-qc
+              <input type="file" accept="image/*" multiple class="hidden" onchange="uploadPhotos(${d.id}, this.files)" />
+            </label>
+            <button onclick="saveDemande(${d.id})" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Enregistrer</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    async function uploadPhotos(id, fileList) {
+      if (!fileList || !fileList.length) return;
+      const input = document.getElementById(`photos-${id}`);
+      const existing = input.value.split(",").map(s => s.trim()).filter(Boolean);
+
+      for (const file of fileList) {
+        const path = `demande-${id}/${Date.now()}-${file.name.replace(/\s+/g, "_")}`;
+        const { error } = await sb.storage.from("photos-qc").upload(path, file);
+        if (error) {
+          alert("Erreur upload : " + error.message);
+          return;
+        }
+        const { data } = sb.storage.from("photos-qc").getPublicUrl(path);
+        existing.push(data.publicUrl);
+      }
+
+      input.value = existing.join(", ");
+      alert("Photo(s) ajoutée(s) au champ ! Clique sur Enregistrer pour publier.");
+    }
+
+    async function saveDemande(id) {
+      const prixRaw = document.getElementById(`prix-${id}`).value;
+      const updates = {
+        prix_client: prixRaw === "" ? null : Number(prixRaw),
+        statut: document.getElementById(`statut-${id}`).value,
+        note_admin: document.getElementById(`note-${id}`).value.trim() || null,
+        photos_qc: document.getElementById(`photos-${id}`).value.trim() || null
+      };
+
+      const { error } = await sb.from("demandes").update(updates).eq("id", id);
+      if (error) {
+        alert("Erreur sauvegarde : " + error.message);
+        return;
+      }
+      alert("Demande mise à jour !");
+      loadAll();
+    }
+  </script>
+</body>
+</html>
