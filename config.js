@@ -1,3 +1,3 @@
 const SUPABASE_URL = "https://dznmtxzogvjerrvbjgs.supabase.co";
-const SUPABASE_KEY = "TA_CLE_PUBLIABLE_ICI";
+const SUPABASE_KEY = "sb_publishable_M6VMuP_pDMLVzafFyDenUw_ucOZucC4";
 const ADMIN_CODE = "1234"; // Change ce code secret pour ton accès admin
