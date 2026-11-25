@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sourcing à la demande</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="config.js"></script>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen">
+  <div class="max-w-xl mx-auto p-4 sm:p-6">
+    <header class="mb-6 flex items-center justify-between">
+      <div>
+        <h1 class="text-2xl font-bold">Sourcing Express</h1>
+        <p class="text-sm text-zinc-400">Demande sur mesure, devis & QC avant validation</p>
+      </div>
+      <a href="admin.html" class="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300">Admin</a>
+    </header>
+
+    <!-- Onglets -->
+    <div class="grid grid-cols-2 gap-2 bg-zinc-900 p-1 rounded-xl mb-6 border border-zinc-800">
+      <button id="tab-new" onclick="switchTab('new')" class="py-2 rounded-lg text-sm font-medium bg-emerald-600 text-white">Nouvelle demande</button>
+      <button id="tab-track" onclick="switchTab('track')" class="py-2 rounded-lg text-sm font-medium text-zinc-400 hover:text-white">Suivre mes demandes</button>
+    </div>
+
+    <!-- Formulaire Nouvelle Demande -->
+    <section id="panel-new" class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-4">
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Ton pseudo (pour suivre ta demande)</label>
+        <input id="f-pseudo" type="text" required placeholder="ex: alex_16" class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 text-sm focus:outline-none focus:border-emerald-500" />
+      </div>
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Snap ou Insta (pour se caler au lycée)</label>
+        <input id="f-contact" type="text" required placeholder="ex: @alex.rl" class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 text-sm focus:outline-none focus:border-emerald-500" />
+      </div>
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Produit souhaité</label>
+        <input id="f-produit" type="text" required placeholder="ex: Maillot Real Madrid Domicile 26/27" class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 text-sm focus:outline-none focus:border-emerald-500" />
+      </div>
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Taille</label>
+        <input id="f-taille" type="text" required placeholder="ex: M" class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 text-sm focus:outline-none focus:border-emerald-500" />
+      </div>
+      <div>
+        <label class="block text-xs text-zinc-400 mb-1">Lien de la boutique officielle (optionnel)</label>
+        <input id="f-lien" type="url" placeholder="https://shop.realmadrid.com/..." class="w-full rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2.5 text-sm focus:outline-none focus:border-emerald-500" />
+      </div>
+      <button onclick="createDemande()" id="btn-submit" class="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 font-semibold text-sm transition">
+        Envoyer ma demande
+      </button>
+      <p id="form-msg" class="text-sm text-center"></p>
+    </section>
+
+    <!-- Suivi des Demandes -->
+    <section id="panel-track" class="hidden space-y-4">
+      <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 flex gap-2">
+        <input id="search-pseudo" type="text" placeholder="Entre ton pseudo exact..." class="flex-1 rounded-xl bg-zinc-950 border border-zinc-800 px-3.5 py-2 text-sm focus:outline-none focus:border-emerald-500" />
+        <button onclick="loadClientDemandes()" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-medium">Voir</button>
+      </div>
+      <div id="client-list" class="space-y-3"></div>
+    </section>
+  </div>
+
+  <script>
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    function switchTab(tab) {
+      const isNew = tab === "new";
+      document.getElementById("panel-new").classList.toggle("hidden", !isNew);
+      document.getElementById("panel-track").classList.toggle("hidden", isNew);
+      document.getElementById("tab-new").className = `py-2 rounded-lg text-sm font-medium ${isNew ? "bg-emerald-600 text-white" : "text-zinc-400 hover:text-white"}`;
+      document.getElementById("tab-track").className = `py-2 rounded-lg text-sm font-medium ${!isNew ? "bg-emerald-600 text-white" : "text-zinc-400 hover:text-white"}`;
+    }
+
+    async function createDemande() {
+      const msg = document.getElementById("form-msg");
+      const btn = document.getElementById("btn-submit");
+      const payload = {
+        client_pseudo: document.getElementById("f-pseudo").value.trim(),
+        client_contact: document.getElementById("f-contact").value.trim(),
+        produit_nom: document.getElementById("f-produit").value.trim(),
+        taille: document.getElementById("f-taille").value.trim(),
+        lien_officiel: document.getElementById("f-lien").value.trim() || null,
+        statut: "En recherche"
+      };
+
+      if (!payload.client_pseudo || !payload.produit_nom || !payload.taille) {
+        msg.className = "text-sm text-center text-amber-400";
+        msg.textContent = "Remplis au moins ton pseudo, le produit et la taille.";
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Envoi...";
+      const { error } = await sb.from("demandes").insert([payload]);
+      btn.disabled = false;
+      btn.textContent = "Envoyer ma demande";
+
+      if (error) {
+        msg.className = "text-sm text-center text-rose-400";
+        msg.textContent = "Erreur : " + error.message;
+        return;
+      }
+
+      msg.className = "text-sm text-center text-emerald-400";
+      msg.textContent = "Demande envoyée ! Passe dans 'Suivre mes demandes' avec ton pseudo.";
+      document.getElementById("f-produit").value = "";
+      document.getElementById("f-taille").value = "";
+      document.getElementById("f-lien").value = "";
+    }
+
+    async function loadClientDemandes() {
+      const pseudo = document.getElementById("search-pseudo").value.trim();
+      const container = document.getElementById("client-list");
+      if (!pseudo) return;
+
+      container.innerHTML = `<p class="text-sm text-zinc-400 text-center py-4">Chargement...</p>`;
+      const { data, error } = await sb
+        .from("demandes")
+        .select("*")
+        .ilike("client_pseudo", pseudo)
+        .order("id", { ascending: false });
+
+      if (error) {
+        container.innerHTML = `<p class="text-sm text-rose-400">Erreur : ${error.message}</p>`;
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        container.innerHTML = `<div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 text-center text-sm text-zinc-400">Aucune demande trouvée pour ce pseudo.</div>`;
+        return;
+      }
+
+      container.innerHTML = data.map(d => {
+        const photos = (d.photos_qc || "").split(",").map(u => u.trim()).filter(Boolean);
+        const photosHtml = photos.length
+          ? `<div class="grid grid-cols-2 gap-2 mt-3">${photos.map(url => `<img src="${url}" alt="Photo" class="w-full h-36 object-cover rounded-xl border border-zinc-800" />`).join("")}</div>`
+          : "";
+
+        let actionsHtml = "";
+        if (d.statut === "Devis prêt") {
+          actionsHtml = `
+            <div class="mt-4 pt-3 border-t border-zinc-800">
+              <p class="text-sm mb-3">Prix proposé : <span class="text-lg font-bold text-emerald-400">${d.prix_client ?? "?"} €</span> <span class="text-xs text-zinc-400">(remise en main propre)</span></p>
+              <div class="flex gap-2">
+                <button onclick="setStatut(${d.id}, 'Validé')" class="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-sm font-semibold">Accepter et commander</button>
+                <button onclick="setStatut(${d.id}, 'Annulé')" class="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-rose-900/60 text-sm text-zinc-300">Annuler</button>
+              </div>
+            </div>`;
+        } else if (d.statut === "Validé") {
+          actionsHtml = `<div class="mt-3 p-3 rounded-xl bg-emerald-950/50 border border-emerald-800/50 text-xs text-emerald-300">Commande acceptée ! Le règlement se fera lors de la remise en main propre (ou selon accord convenu).</div>`;
+        }
+
+        return `
+          <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <h3 class="font-semibold">${d.produit_nom} <span class="text-xs text-zinc-400">(${d.taille})</span></h3>
+                <p class="text-xs text-zinc-400 mt-0.5">#${d.id} • ${d.client_pseudo}</p>
+              </div>
+              <span class="text-xs px-2.5 py-1 rounded-full bg-zinc-800 text-zinc-200 font-medium">${d.statut}</span>
+            </div>
+            ${d.note_admin ? `<p class="text-xs text-zinc-300 mt-2 bg-zinc-950/70 p-2.5 rounded-lg border border-zinc-800/80">${d.note_admin}</p>` : ""}
+            ${photosHtml}
+            ${actionsHtml}
+          </div>`;
+      }).join("");
+    }
+
+    async function setStatut(id, statut) {
+      const { error } = await sb.from("demandes").update({ statut }).eq("id", id);
+      if (error) {
+        alert("Erreur : " + error.message);
+        return;
+      }
+      loadClientDemandes();
+    }
+  </script>
+</body>
+</html>
